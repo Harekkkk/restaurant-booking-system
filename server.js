@@ -5,7 +5,7 @@ const crypto = require('crypto'); // Для генерації ID
 const reservationService = require('./service/reservationService');
 
 const app = express();
-const PORT = 3000;
+const PORT = 3005; // Змінили, щоб не конфліктувати з демо-стендом
 
 app.use(cors());
 app.use(express.json());
