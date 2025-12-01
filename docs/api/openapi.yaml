@@ -1,0 +1,75 @@
+openapi: 3.0.0
+info:
+  title: Restaurant Booking API
+  version: 1.0.0
+paths:
+  /reservations:
+    get:
+      summary: Отримати список бронювань
+      responses:
+        '200':
+          description: Список успішно отримано
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Reservation'
+    post:
+      summary: Створити нове бронювання
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReservationDto'
+      responses:
+        '201':
+          description: Бронювання створено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reservation'
+  /reservations/{id}:
+    delete:
+      summary: Скасувати (видалити) бронювання
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Успішно видалено
+        '404':
+          description: Бронювання не знайдено
+
+components:
+  schemas:
+    Reservation:
+      type: object
+      properties:
+        id:
+          type: integer
+        tableId:
+          type: integer
+        guestName:
+          type: string
+        startTime:
+          type: string
+          format: date-time
+    CreateReservationDto:
+      type: object
+      required:
+        - tableId
+        - guestName
+        - startTime
+      properties:
+        tableId:
+          type: integer
+        guestName:
+          type: string
+        startTime:
+          type: string
+          format: date-time
