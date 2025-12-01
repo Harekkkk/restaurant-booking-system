@@ -14,7 +14,7 @@ RUN npm install
 COPY . .
 
 # Відкриваємо порт 3000
-EXPOSE 3000
+EXPOSE 3005
 
 # Команда запуску
 CMD ["node", "server.js"]

@@ -3,7 +3,7 @@ class Table {
         this.id = id;
         this.name = name;
         this.capacity = capacity;
-        this.location = location; // наприклад: 'Main Hall', 'Terrace'
+        this.location = location;
     }
 
     isSuitableFor(numberOfGuests) {

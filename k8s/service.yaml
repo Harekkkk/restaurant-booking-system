@@ -6,8 +6,8 @@ metadata:
 spec:
   selector:
     app: restaurant
-  type: LoadBalancer # Дозволить отримати зовнішню IP (через тунель)
+  type: LoadBalancer
   ports:
     - protocol: TCP
-      port: 80      # Зовнішній порт сервісу
-      targetPort: 3005 # Порт вашого контейнера
+      port: 80
+      targetPort: 3005

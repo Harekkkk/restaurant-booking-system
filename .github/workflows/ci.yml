@@ -11,25 +11,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. Завантажуємо код з репозиторію
     - name: Checkout code
       uses: actions/checkout@v4
-
-    # 2. Встановлюємо Node.js
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '20'
         cache: 'npm'
-
-    # 3. Встановлюємо бібліотеки
     - name: Install dependencies
       run: npm install
-
-    # 4. Запускаємо тести (ті, що ми щойно написали)
     - name: Run Tests
       run: npm test
-
-    # 5. Пробуємо зібрати Docker образ (перевірка, що Dockerfile правильний)
     - name: Build Docker image
       run: docker build -t my-app .

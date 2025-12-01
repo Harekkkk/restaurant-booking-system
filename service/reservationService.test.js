@@ -16,7 +16,7 @@ describe('ReservationService', () => {
     });
 
     test('має викинути помилку, якщо немає імені гостя', () => {
-        const data = { tableId: 1 }; // Немає guestName
+        const data = { tableId: 1 };
         
         expect(() => {
             reservationService.create(data);

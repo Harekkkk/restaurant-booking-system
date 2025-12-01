@@ -5,7 +5,7 @@ class Reservation {
         this.guestName = guestName;
         this.guestContact = guestContact;
         this.startTime = new Date(startTime);
-        this.status = 'PENDING'; // PENDING, CONFIRMED, CANCELLED
+    this.status = 'PENDING';
     }
 
     confirm() {

@@ -4,7 +4,7 @@ metadata:
   name: restaurant-deployment
   namespace: default
 spec:
-  replicas: 1 # Кількість копій (подів)
+  replicas: 1
   selector:
     matchLabels:
       app: restaurant
@@ -15,10 +15,10 @@ spec:
     spec:
       containers:
       - name: restaurant-app
-        image: restaurant-app:latest # Наш образ
-        imagePullPolicy: Never # Важливо для Minikube (брати локальний образ)
+        image: restaurant-app:latest
+        imagePullPolicy: Never
         ports:
-        - containerPort: 3005 # Порт, який ми змінили в 8-й лабі
+        - containerPort: 3005
         env:
         - name: PORT
           value: "3005"
