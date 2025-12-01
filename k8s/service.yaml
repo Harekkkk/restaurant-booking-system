@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: restaurant-service
+  namespace: default
+spec:
+  selector:
+    app: restaurant
+  type: LoadBalancer # Дозволить отримати зовнішню IP (через тунель)
+  ports:
+    - protocol: TCP
+      port: 80      # Зовнішній порт сервісу
+      targetPort: 3005 # Порт вашого контейнера
