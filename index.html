@@ -2,53 +2,137 @@
 <html lang="uk">
 <head>
     <meta charset="UTF-8">
-    <title>Бронювання столиків</title>
+    <title>Бронювання столиків PRO</title>
     <style>
-        body { font-family: sans-serif; padding: 20px; }
+        body { font-family: 'Segoe UI', sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
+        .container { display: flex; gap: 20px; }
+        .column { flex: 1; }
+        
         .card { 
-            border: 1px solid #ddd; 
-            padding: 15px; 
-            margin: 10px 0; 
-            border-radius: 8px; 
-            background-color: #f9f9f9;
+            border: 1px solid #ddd; padding: 15px; margin: 10px 0; 
+            border-radius: 8px; background-color: #f9f9f9; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
         .status { font-weight: bold; }
         .available { color: green; }
         .reserved { color: red; }
-        button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
+        
+        input, button { padding: 10px; margin: 5px 0; width: 100%; box-sizing: border-box; }
+        button { background-color: #007bff; color: white; border: none; cursor: pointer; border-radius: 5px;}
+        button:hover { background-color: #0056b3; }
+        h2 { border-bottom: 2px solid #eee; padding-bottom: 10px; }
     </style>
 </head>
 <body>
-    <h1>Система бронювання столиків</h1>
-    
-    <button id="loadBtn">Завантажити список столиків</button>
-    
-    <div id="tablesList"></div>
+    <h1>🍽️ Система ресторану (K8s Edition)</h1>
+
+    <div class="container">
+        <div class="column">
+            <h2>🏠 Столики</h2>
+            <button onclick="loadTables()">🔄 Оновити столики</button>
+            <div id="tablesList"></div>
+        </div>
+
+        <div class="column">
+            <h2>📅 Зробити бронювання</h2>
+            <div class="card">
+                <input type="text" id="guestName" placeholder="Ваше ім'я">
+                <input type="number" id="tableId" placeholder="ID столика (напр. 1)">
+                <input type="date" id="dateInput">
+                <button onclick="createReservation()">Забронювати</button>
+            </div>
+
+            <h2>Список бронювань</h2>
+            <button onclick="loadReservations()">🔄 Оновити броні</button>
+            <div id="reservationsList"></div>
+        </div>
+    </div>
 
     <script>
-        const btn = document.getElementById('loadBtn');
-        const list = document.getElementById('tablesList');
 
-        btn.addEventListener('click', async () => {
-            try {
-                    const response = await fetch('http://localhost:3005/tables');
-                const result = await response.json();
-                list.innerHTML = '';
-                result.data.forEach(table => {
-                    const div = document.createElement('div');
-                    div.className = 'card';
-                    div.innerHTML = `
-                        <h3>${table.name}</h3>
-                        <p>Місць: ${table.capacity}</p>
-                        <p>Статус: <span class="status ${table.status}">${table.status}</span></p>
-                    `;
-                    list.appendChild(div);
-                });
-            } catch (error) {
-                alert('Помилка з\'єднання з сервером!');
-                console.error(error);
+        const API_URL = 'http://localhost:3005'; 
+
+        async function loadTables() {
+            const res = await fetch(`${API_URL}/tables`);
+            const json = await res.json();
+            const list = document.getElementById('tablesList');
+            list.innerHTML = '';
+            json.data.forEach(t => {
+                list.innerHTML += `
+                <div class="card">
+                    <b>ID: ${t.id}</b> - ${t.name}<br>
+                    Місць: ${t.capacity} <br>
+                    Статус: <span class="${t.status}">${t.status}</span>
+                </div>`;
+            });
+        }
+
+        async function loadReservations() {
+            const res = await fetch(`${API_URL}/reservations`);
+            const json = await res.json(); 
+            const list = document.getElementById('reservationsList');
+            list.innerHTML = '';
+            
+
+            if(json.length === 0) {
+                list.innerHTML = '<p>Поки немає бронювань</p>';
+                return;
             }
-        });
+
+            json.forEach(r => {
+                list.innerHTML += `
+                <div class="card">
+                    <b>Бронь #${r.id}</b><br>
+                    Гість: ${r.guestName}<br>
+                    Столик ID: ${r.tableId}<br>
+                    <button style="background-color:red" onclick="deleteReservation(${r.id})">Скасувати</button>
+                </div>`;
+            });
+        }
+
+        async function createReservation() {
+            const name = document.getElementById('guestName').value;
+            const tid = document.getElementById('tableId').value;
+            
+            if(!name || !tid) { alert("Введіть ім'я та ID столика!"); return; }
+
+            const data = {
+                tableId: parseInt(tid),
+                guestName: name,
+                startTime: document.getElementById('dateInput').value || new Date().toISOString()
+            };
+
+            try {
+                const res = await fetch(`${API_URL}/reservations`, {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        // Додаємо ключ ідемпотентності (просто поточний час як унікальний ID)
+                        'Idempotency-Key': Date.now().toString() 
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                if(res.ok) {
+                    alert("Успішно! ✅");
+                    loadReservations();
+                } else {
+                    const err = await res.json();
+                    alert("Помилка: " + JSON.stringify(err));
+                }
+            } catch(e) {
+                alert("Помилка з'єднання: " + e);
+            }
+        }
+
+        async function deleteReservation(id) {
+            if(!confirm('Видалити?')) return;
+            await fetch(`${API_URL}/reservations/${id}`, { method: 'DELETE' });
+            loadReservations();
+        }
+
+        loadTables();
+        loadReservations();
     </script>
 </body>
 </html>
