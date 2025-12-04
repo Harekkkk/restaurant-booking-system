@@ -1,6 +1,7 @@
 const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
 const cors = require('cors');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3005;
@@ -9,6 +10,7 @@ app.use(cors());
 app.use(express.json());
 
 const db = new sqlite3.Database('./restaurant.db');
+const idemStore = new Map();
 
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS tables (id INTEGER PRIMARY KEY, name TEXT, type TEXT, capacity INTEGER, blocked_until TEXT)`);
@@ -41,6 +43,10 @@ function formatDate(dateObj) {
     return dateObj.toLocaleString('uk-UA', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
 app.get('/tables', (req, res) => {
     db.all("SELECT * FROM tables", [], (err, tables) => {
         if (err) return res.status(500).json({error: err.message});
@@ -52,16 +58,16 @@ app.get('/tables', (req, res) => {
             if (err) return res.status(500).json({error: err.message});
 
             const enrichedTables = tables.map(table => {
-                let statusText = "Вільний";
-                let statusClass = "available";
-                
                 if (table.blocked_until && new Date(table.blocked_until).getTime() > nowMs) {
-                    statusText = `Зачинено до ${formatDate(new Date(table.blocked_until))}`;
-                    statusClass = "blocked";
+                    return { ...table, statusText: `Зачинено до ${formatDate(new Date(table.blocked_until))}`, statusClass: "blocked", isBlocked: true };
                 }
 
                 const tableRes = reservations.filter(r => r.tableId === table.id);
                 tableRes.sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+
+                let statusText = "Вільний";
+                let statusClass = "available";
+                let activeReservationId = null;
 
                 for (let r of tableRes) {
                     const start = new Date(r.startTime).getTime();
@@ -71,21 +77,25 @@ app.get('/tables', (req, res) => {
                     if (nowMs >= start && nowMs < end) {
                         statusText = `Зайнятий до ${formatTime(new Date(end))}`;
                         statusClass = "reserved";
+                        activeReservationId = r.id;
                         break; 
                     } else if (nowMs >= end && nowMs < cleanup) {
                         statusText = `Прибирання до ${formatTime(new Date(cleanup))}`;
                         statusClass = "cleaning";
+                        activeReservationId = r.id; 
                         break;
-                    } else if (nowMs < start && statusClass !== "blocked" && statusClass !== "reserved") {
+                    } else if (nowMs < start) {
                         if (start - nowMs < 24 * 60 * 60 * 1000) {
-                            statusText = `Вільний до ${formatTime(new Date(start))}`;
-                            statusClass = "soon-reserved";
+                            if (statusClass === "available") {
+                                statusText = `Вільний до ${formatTime(new Date(start))}`;
+                                statusClass = "soon-reserved";
+                            }
                             break;
                         }
                     }
                 }
 
-                return { ...table, statusText, statusClass };
+                return { ...table, statusText, statusClass, activeReservationId, isBlocked: false };
             });
 
             res.json({ data: enrichedTables });
@@ -103,7 +113,6 @@ app.put('/tables/:id', (req, res) => {
 
 app.post('/tables/:id/block', (req, res) => {
     const { blockedUntil } = req.body;
-    
     db.run("UPDATE tables SET blocked_until = ? WHERE id = ?", [blockedUntil, req.params.id], function(err) {
         logAction("Блокування", blockedUntil ? `Столик #${req.params.id} заблоковано до ${formatDate(new Date(blockedUntil))}` : `Столик #${req.params.id} розблоковано`);
         res.json({ message: "OK" });
@@ -111,23 +120,40 @@ app.post('/tables/:id/block', (req, res) => {
 });
 
 app.post('/reservations', (req, res) => {
+    const key = req.get('Idempotency-Key');
+    
+    // 1. ПЕРЕВІРКА КЛЮЧА
+    if (key) {
+        if (idemStore.has(key)) {
+            const cached = idemStore.get(key);
+            // Якщо запит ще обробляється, повертаємо 409 або просимо почекати
+            if (cached === 'PENDING') return res.status(409).json({ error: "Запит вже обробляється, не дублюйте кліки" });
+            return res.status(200).json(cached);
+        }
+        // БЛОКУЄМО КЛЮЧ МИТТЄВО
+        idemStore.set(key, 'PENDING');
+    }
+
     const { tableId, guestName, startTime, duration, guestCount, comment } = req.body;
     
-    if (new Date(startTime).getMinutes() % 10 !== 0) return res.status(400).json({ error: "Час має бути кратним 10 хв" });
-    if (new Date(startTime) < new Date()) return res.status(400).json({ error: "Час вже минув!" });
+    // Функція очистки при помилці
+    const cleanup = () => { if (key) idemStore.delete(key); };
+
+    if (new Date(startTime).getMinutes() % 10 !== 0) { cleanup(); return res.status(400).json({ error: "Час має бути кратним 10 хв" }); }
+    if (new Date(startTime) < new Date()) { cleanup(); return res.status(400).json({ error: "Час вже минув!" }); }
 
     db.get("SELECT capacity, blocked_until FROM tables WHERE id = ?", [tableId], (err, table) => {
-        if (!table) return res.status(404).json({ error: "Не знайдено" });
+        if (!table) { cleanup(); return res.status(404).json({ error: "Не знайдено" }); }
         
         if (table.blocked_until) {
             const blockDate = new Date(table.blocked_until);
-            const bookDate = new Date(startTime);
-            if (bookDate < blockDate) {
+            if (new Date(startTime) < blockDate) {
+                cleanup();
                 return res.status(400).json({ error: `Столик зачинено до ${formatDate(blockDate)}` });
             }
         }
 
-        if (guestCount > table.capacity) return res.status(400).json({ error: `Забагато гостей! Макс: ${table.capacity}` });
+        if (guestCount > table.capacity) { cleanup(); return res.status(400).json({ error: `Забагато гостей! Макс: ${table.capacity}` }); }
 
         const reqStart = new Date(startTime).getTime();
         const reqEnd = reqStart + duration * 60 * 60 * 1000 + 10 * 60 * 1000;
@@ -140,15 +166,21 @@ app.post('/reservations', (req, res) => {
             });
 
             if (conflict) {
-                const busyStart = formatTime(new Date(conflict.startTime));
-                const busyEnd = formatTime(new Date(new Date(conflict.startTime).getTime() + conflict.duration * 3600000 + 600000));
-                return res.status(409).json({ error: `Конфлікт з бронею #${conflict.id} (${conflict.guestName}): ${busyStart} - ${busyEnd}` });
+                cleanup();
+                const conflictTime = `${formatTime(new Date(conflict.startTime))} - ${formatTime(new Date(new Date(conflict.startTime).getTime() + conflict.duration * 3600000 + 600000))}`;
+                return res.status(409).json({ error: `Конфлікт з бронею #${conflict.id} (${conflict.guestName}): ${conflictTime}` });
             }
 
             const stmt = db.prepare("INSERT INTO reservations (tableId, guestName, startTime, duration, guestCount, comment, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)");
             stmt.run(tableId, guestName, startTime, duration, guestCount, comment, new Date().toISOString(), function(err) {
+                if (err) { cleanup(); return res.status(500).json({ error: err.message }); }
+                
+                const responseData = { id: this.lastID, message: "Успішно" };
+                // ЗБЕРІГАЄМО РЕЗУЛЬТАТ ДЛЯ КЛЮЧА
+                if (key) idemStore.set(key, responseData);
+                
                 logAction("Створено", `Бронь #${this.lastID}: ${guestName}, Стіл ${tableId}, ${formatDate(new Date(startTime))}, ${duration} год.`, null);
-                res.status(201).json({ id: this.lastID });
+                res.status(201).json(responseData);
             });
         });
     });
@@ -188,7 +220,7 @@ app.post('/reservations/:id/finish', (req, res) => {
         if (newDuration < 0.001) newDuration = 0.001;
 
         db.run("UPDATE reservations SET startTime = ?, duration = ? WHERE id = ?", [newStartTime, newDuration, req.params.id], function(err) {
-            logAction("Звільнення", `Бронь #${row.id} (Стіл ${row.tableId}): ${actionMsg}. Причина: ${reason}`, null);
+            logAction("Звільнення", `Бронь #${row.id} (${row.guestName}, Стіл ${row.tableId}): ${actionMsg}. Причина: ${reason}`, null);
             res.json({ message: "OK" });
         });
     });
@@ -220,7 +252,7 @@ app.post('/reservations/:id/extend', (req, res) => {
 
             const newDuration = row.duration + (minutes / 60);
             db.run("UPDATE reservations SET duration = ? WHERE id = ?", [newDuration, row.id], function(err) {
-                logAction("Продовження", `Бронь #${row.id} (Стіл ${row.tableId}) продовжено на ${minutes} хв.`, null);
+                logAction("Продовження", `Бронь #${row.id} (${row.guestName}) продовжено на ${minutes} хв.`, null);
                 res.json({ message: "Продовжено" });
             });
         });
@@ -229,7 +261,6 @@ app.post('/reservations/:id/extend', (req, res) => {
 
 app.post('/reservations/:id/start', (req, res) => {
     const now = Date.now();
-    
     db.get("SELECT * FROM reservations WHERE id = ?", [req.params.id], (err, targetRes) => {
         if (!targetRes) return res.status(404).json({ error: "Не знайдено" });
 
@@ -240,13 +271,11 @@ app.post('/reservations/:id/start', (req, res) => {
                 return now >= s && now < e;
             });
 
-            if (isOccupied) {
-                return res.status(409).json({ error: "Стіл зараз зайнятий іншою бронею!" });
-            }
+            if (isOccupied) return res.status(409).json({ error: "Стіл зараз зайнятий!" });
 
             const newStart = new Date().toISOString();
             db.run("UPDATE reservations SET startTime = ? WHERE id = ?", [newStart, req.params.id], function(err) {
-                logAction("Посадка", `Бронь #${req.params.id} (Стіл ${targetRes.tableId}) почалась вручну: ${formatTime(new Date())}`, null);
+                logAction("Посадка", `Бронь #${req.params.id} почалась вручну`, null);
                 res.json({ message: "OK" });
             });
         });
@@ -264,7 +293,7 @@ app.delete('/reservations/:id', (req, res) => {
     db.get("SELECT * FROM reservations WHERE id = ?", [req.params.id], (err, row) => {
         if (!row) return res.status(404).json({ error: "Не знайдено" });
         db.run("DELETE FROM reservations WHERE id = ?", [req.params.id], function(err) {
-            logAction("Скасовано", `Бронь #${row.id} (${row.guestName}, Стіл ${row.tableId}). Причина: ${reason}`, row);
+            logAction("Скасовано", `Бронь #${row.id} (${row.guestName}). Причина: ${reason}`, row);
             res.json({ message: "Deleted" });
         });
     });
@@ -281,7 +310,7 @@ app.post('/restore/:logId', (req, res) => {
         const stmt = db.prepare("INSERT INTO reservations (tableId, guestName, startTime, duration, guestCount, comment, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)");
         stmt.run(r.tableId, r.guestName, r.startTime, r.duration, r.guestCount, r.comment, r.created_at, function(err) {
             if(err) return res.status(500).json({error: "Час вже зайнято!"});
-            logAction("Відновлено", `Бронь #${this.lastID} (${r.guestName}) відновлено з архіву`, null);
+            logAction("Відновлено", `Бронь #${this.lastID} (${r.guestName}) відновлено`, null);
             res.json({ message: "OK" });
         });
     });
