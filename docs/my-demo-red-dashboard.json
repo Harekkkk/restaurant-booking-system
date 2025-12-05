@@ -1,0 +1,25 @@
+{
+  "title": "My Demo RED Dashboard",
+  "panels": [
+    {
+      "title": "Requests per Second",
+      "type": "timeseries",
+      "targets": [ { "expr": "rate(http_server_requests_total{service_name=\"restaurant-booking-service\"}[1m])", "legendFormat": "{{status_code}}" } ]
+    },
+    {
+      "title": "Error Rate",
+      "type": "stat",
+      "targets": [ { "expr": "sum(rate(http_server_requests_total{service_name=\"restaurant-booking-service\", status_code=~\"5..\"}[1m])) / sum(rate(http_server_requests_total{service_name=\"restaurant-booking-service\"}[1m])) * 100" } ]
+    },
+    {
+      "title": "Latency (p95)",
+      "type": "timeseries",
+      "targets": [ { "expr": "histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket{service_name=\"restaurant-booking-service\"}[1m])) by (le))" } ]
+    },
+    {
+      "title": "Logs",
+      "type": "logs",
+      "targets": [ { "expr": "{service_name=\"restaurant-booking-service\"}" } ]
+    }
+  ]
+}

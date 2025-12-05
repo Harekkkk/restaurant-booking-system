@@ -19,45 +19,16 @@ spec:
         imagePullPolicy: Never
         ports:
         - containerPort: 3005
-        env:
-        - name: PORT
-          value: "3005"
+        # ОСЬ ЦЕЙ БЛОК БУВ ВІДСУТНІЙ АБО НЕ ЗБЕРІГСЯ:
         envFrom:
         - configMapRef:
             name: restaurant-config
+        - secretRef:
+            name: restaurant-secret
+        # -------------------------------------------
         livenessProbe:
           httpGet:
             path: /tables
             port: 3005
-          initialDelaySeconds: 5
+          initialDelaySeconds: 10
           periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /tables
-            port: 3005
-          initialDelaySeconds: 5
-          periodSeconds: 10
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: restaurant-deployment
-  namespace: default
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: restaurant
-  template:
-    metadata:
-      labels:
-        app: restaurant
-    spec:
-      containers:
-      - name: restaurant-app
-        image: restaurant-app:latest
-        imagePullPolicy: Never
-        ports:
-        - containerPort: 3005
-        env:
-        - name: PORT
-          value: "3005"
