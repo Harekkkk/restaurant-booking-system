@@ -316,4 +316,13 @@ app.post('/restore/:logId', (req, res) => {
     });
 });
 
-app.listen(PORT, () => { console.log(`Run ${PORT}`); });
+app.listen(PORT, () => {
+    console.log(`Server running on ${PORT}`);
+    
+    if (process.env.APP_MODE) {
+        console.log(`[ConfigMap] Mode: ${process.env.APP_MODE}`);
+    }
+    if (process.env.ADMIN_KEY) {
+        console.log(`[Secret] Admin Key Loaded: ***`);
+    }
+});
